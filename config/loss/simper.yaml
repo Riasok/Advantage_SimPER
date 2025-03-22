@@ -1,0 +1,4 @@
+name: simper
+beta: 0.1 # the temperature parameter for dummy KTO; lower values mean we care less about the reference model -> not needed!
+trainer: SimPERTrainer # implemented in trainers.py
+dataloader: PreferenceDataLoader # already exists in dataloaders.py
