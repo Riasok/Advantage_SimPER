@@ -51,15 +51,15 @@ eval_microbatch_size: null
 attn_implementation: eager
 
 # whether to use LoRA training
-use_peft: false
+use_peft: true
 
 # whether to load LoRAs from somewhere (should be a path to a directory)
 load_lora_from: null
 
 # lora hyperparameters; the lora will be merged into the base model before saving
 peft:
-  lora_r: 64
-  lora_alpha: 256 
+  lora_r: 16
+  lora_alpha: 32 
   lora_dropout: 0.05
   target_modules: "all-linear"
 
