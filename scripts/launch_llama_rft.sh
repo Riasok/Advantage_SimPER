@@ -8,9 +8,9 @@ LEARNING_RATE=1e-6
 USE_PEFT=true
 
 # Training configuration
-BATCH_SIZE=24
-GRAD_ACCUM_STEPS=2
-EVAL_BATCH_SIZE=24
+BATCH_SIZE=16
+GRAD_ACCUM_STEPS=16
+EVAL_BATCH_SIZE=16
 N_EPOCHS=1
 EVAL_EVERY=1000
 ENABLE_INTERMEDIATE_CHECKPOINTS=true
@@ -20,13 +20,13 @@ GPU_DEVICES="1,2"  # Default to "1,2" if not provided
 
 # Dataset configuration
 DATASETS="[data/dpomath.json]"
-CACHE_DIR="~/reasoning/Advantage_SimPER/outputs"
+CACHE_DIR="~/reasoning/HALOs/outputs"
 TEST_DATASET="math500"
-NUM_SAMPLES_PER_PROMPT=1 # for sampling
+NUM_SAMPLES_PER_PROMPT=8 # for sampling
 
 # Output naming
-EXP_NAME="llama3.1-8b-dpo-${BETA}-${LEARNING_RATE}"
-OUTPUT_FILE="outputs/llama3.1-8b-dpo-${BETA}-${LEARNING_RATE}.json"
+EXP_NAME="llama3.1-8b-rft-test-${BETA}-${LEARNING_RATE}"
+OUTPUT_FILE="outputs/llama3.1-8b-rft-${BETA}-${LEARNING_RATE}.json"
 
 # ========== ENVIRONMENT SETUP ==========
 export CUDA_VISIBLE_DEVICES=${GPU_DEVICES}
@@ -44,7 +44,7 @@ echo "Using ${GPU_COUNT} GPUs with config: ${CONFIG_FILE}"
 accelerate launch \
   --config_file ${CONFIG_FILE} \
   launch.py \
-  loss=dpo \
+  loss=sft \
   model=llama exp_name=${EXP_NAME} \
   datasets=${DATASETS} \
   ++cache_dir=${CACHE_DIR} \
@@ -57,9 +57,9 @@ accelerate launch \
   ++config.intermediate_checkpoints=${ENABLE_INTERMEDIATE_CHECKPOINTS} \
   ++config.eval_every=${EVAL_EVERY} \
   ++model.use_peft=${USE_PEFT} \
-  ++n_examples=24
-#  ++n_epochs=${N_EPOCHS}
-# ========== EVALUATION ==========sssd
+  ++n_epochs=${N_EPOCHS}
+
+# ========== EVALUATION ==========
 echo "Starting evaluation on ${TEST_DATASET}"
 python -m train.sample ${CKPT} \
   --gpu_count ${GPU_COUNT} \

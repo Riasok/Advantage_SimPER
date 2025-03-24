@@ -190,7 +190,7 @@ class BasicTrainer(object):
         """
         Run evaluation on all the examples in the test data and return the metrics from get_batch_metrics.
         This is close-ended evaluation and measures the performance of a single model on a single dataset. 
-        It does not compare two models to eacch other.
+        It does not compare two models to each other.
 
         Returns:
             A dict of form:

@@ -2,7 +2,7 @@ import json
 from collections import defaultdict, Counter
 
 from datasets import load_dataset
-from math_parsingutil import extract_answer, check_equivalence
+from train.math_parsingutil import extract_answer, check_equivalence
 
 
 def evaluate_pass_metrics_with_math500(json_file_path: str):

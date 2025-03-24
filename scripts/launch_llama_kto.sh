@@ -1,80 +1,71 @@
 #!/bin/bash
-#SBATCH --job-name=llama-kto
-#SBATCH --nodes=1
-#SBATCH --mem=100G
-#SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=8
-#SBATCH --time=23:55:00
-#SBATCH --partition=pli-c
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
 
-BETA=$1
-LR=$2
+# ========== HYPERPARAMETERS ==========
+# Model configuration
+MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+BETA=0.1
+LEARNING_RATE=1e-6
+USE_PEFT=true
 
-# Function to find an available port
-find_free_port() {
-    local port
-    while true; do
-        # Generate a random port number between 20000 and 65000
-        port=$(shuf -i 29500-29510 -n 1)
-        # Check if the port is in use
-        if ! netstat -tuln | grep -q ":$port "; then
-            echo "$port"
-            break
-        fi
-    done
-}
+# Training configuration
+BATCH_SIZE=16
+GRAD_ACCUM_STEPS=16
+EVAL_BATCH_SIZE=16
+N_EPOCHS=1
+EVAL_EVERY=1000
+ENABLE_INTERMEDIATE_CHECKPOINTS=true
 
-# Function to initialize the environment and print diagnostic information
-# very important that this is run within srun for training to work!!!
-init_env() {
-    # Load necessary modules (adjust as needed for your system)
-    module load anaconda3/2024.2
+# Hardware configuration
+GPU_DEVICES="1,2"  # Default to "1,2" if not provided
 
-    # Activate your conda environment
-    source $(conda info --base)/etc/profile.d/conda.sh
-    conda activate halos
+# Dataset configuration
+DATASETS="[data/dpomath.json]"
+CACHE_DIR="~/reasoning/Advantage_SimPER/outputs"
+TEST_DATASET="math500"
+NUM_SAMPLES_PER_PROMPT=8 # for sampling
 
-    echo "Running on node: $(hostname)"
-    echo "Machine Rank: $SLURM_PROCID"
-    
-    export MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-    export MASTER_PORT=$(find_free_port | tr -d '\n')
-    export HF_DATASETS_OFFLINE=1
-    export HF_HUB_OFFLINE=1
-    
-    echo "Master node: $MASTER_ADDR"
-    echo "Number of nodes: $SLURM_JOB_NUM_NODES"
-    echo "GPUs per node: $SLURM_GPUS_PER_NODE"
-}
+# Output naming
+EXP_NAME="llama3.1-8b-kto-test-${BETA}-${LEARNING_RATE}"
+OUTPUT_FILE="outputs/llama3.1-8b-kto-${BETA}-${LEARNING_RATE}.json"
 
-export -f find_free_port
-export -f init_env
+# ========== ENVIRONMENT SETUP ==========
+export CUDA_VISIBLE_DEVICES=${GPU_DEVICES}
+export MODEL_PATH=${MODEL_NAME}
+export CKPT=${CACHE_DIR}/${EXP_NAME}/FINAL
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_OFFLINE=1
 
-# Run the training script using srun
-srun --jobid=$SLURM_JOB_ID --nodes=$SLURM_JOB_NUM_NODES --ntasks-per-node=1 bash -c "
-init_env
-export MODEL_PATH=meta-llama/Meta-Llama-3-8B
-export CKPT=/scratch/gpfs/ke7953/models/llama3-8B-kto-${BETA}-${LR}/FINAL
+GPU_COUNT=$(echo ${GPU_DEVICES} | tr -cd ',' | wc -c)
+GPU_COUNT=$((GPU_COUNT + 1))  # Count is commas + 1
+CONFIG_FILE="accelerate_config/fsdp_${GPU_COUNT}gpu.yaml"
+echo "Using ${GPU_COUNT} GPUs with config: ${CONFIG_FILE}"
 
+# ========== TRAINING ==========
 accelerate launch \
-    --config_file accelerate_config/fsdp_4gpu.yaml \
-    --machine_rank \$SLURM_PROCID \
-    --main_process_ip \$MASTER_ADDR \
-    --main_process_port \$MASTER_PORT \
-    launch.py loss=kto model=llama datasets=[ultrabin] exp_name=llama3-8B-kto-${BETA}-${LR} \
-    ++cache_dir=/scratch/gpfs/ke7953/models \
-    ++model.name_or_path=\$MODEL_PATH \
-    ++lr=${LR} \
-    ++loss.beta=${BETA} \
-    ++model.batch_size=32 ++model.gradient_accumulation_steps=1 ++model.eval_batch_size=32
+  --config_file ${CONFIG_FILE} \
+  launch.py \
+  loss=kto \
+  model=llama exp_name=${EXP_NAME} \
+  datasets=${DATASETS} \
+  ++cache_dir=${CACHE_DIR} \
+  ++model.name_or_path=${MODEL_PATH} \
+  ++lr=${LEARNING_RATE} \
+  ++loss.beta=${BETA} \
+  ++model.batch_size=${BATCH_SIZE} \
+  ++model.gradient_accumulation_steps=${GRAD_ACCUM_STEPS} \
+  ++model.eval_batch_size=${EVAL_BATCH_SIZE} \
+  ++config.intermediate_checkpoints=${ENABLE_INTERMEDIATE_CHECKPOINTS} \
+  ++config.eval_every=${EVAL_EVERY} \
+  ++model.use_peft=${USE_PEFT} \
+  ++n_epochs=${N_EPOCHS}
 
-lm_eval --model hf \
-  --model_args pretrained=\$CKPT,tokenizer=\$CKPT,parallelize=True \
-  --tasks arc_easy,arc_challenge,winogrande,bbh_cot_fewshot,gsm8k_cot \
-  --batch_size 4
+# ========== EVALUATION ==========
+echo "Starting evaluation on ${TEST_DATASET}"
+python -m train.sample ${CKPT} \
+  --gpu_count ${GPU_COUNT} \
+  --output_file ${OUTPUT_FILE} \
+  --datasets ${TEST_DATASET} \
+  --num_samples_per_prompt ${NUM_SAMPLES_PER_PROMPT} \
+  --split test
 
-python -m train.sample \$CKPT --gpu_count 2 --output_file outputs/llama3-8b-kto-${BETA}-${LR}.json
-"
+echo "Training and evaluation complete"

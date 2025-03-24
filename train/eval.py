@@ -5,7 +5,7 @@ import sys
 import os
 # Import functions from the utils file
 # Replace 'paste_2' with the actual module name without the .py extension
-from math_parsingutil import *
+from train.math_parsingutil import *
 
 def analyze_math_dataset(file_path):
     """
