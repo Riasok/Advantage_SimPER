@@ -247,7 +247,9 @@ class BasicTrainer(object):
         last_log = None
         batch_metrics = defaultdict(list)
 
-        for batch in self.train_iterator:
+        #for batch in self.train_iterator:
+        for batch in (tqdm(self.train_iterator, desc='Training batches', mininterval=1.0) if self.accelerator.is_main_process else self.train_iterator):
+
             if self.batch_counter < self.num_skip_batches:
                 self.batch_counter += 1
                 self.example_counter += self.config.model.batch_size
@@ -659,6 +661,32 @@ class SimPOTrainer(PairedPreferenceTrainer):
 
         return losses, chosen_rewards.detach(), rejected_rewards.detach()
 
+class SimPERTrainer(PairedPreferenceTrainer):
+    def loss(self,
+             batch: Dict,
+             policy_chosen_logps: torch.FloatTensor,
+             policy_rejected_logps: torch.FloatTensor,
+             *args,
+             ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+        """Compute the SimPER loss for a batch of policy and reference model token-level log probabilities."""
+        prompt_lengths = (batch['prompt_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+
+        chosen_combined_lengths = (batch['chosen_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        chosen_lengths = (chosen_combined_lengths - prompt_lengths).clamp(min=1)
+        chosen_log_likelihood = policy_chosen_logps.sum(-1) / chosen_lengths
+
+        rejected_combined_lengths = (batch['rejected_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        rejected_lengths = (rejected_combined_lengths - prompt_lengths).clamp(min=1)
+        rejected_log_likelihood = policy_rejected_logps.sum(-1) / rejected_lengths
+        
+        # Compute the inverse perplexity
+        chosen_perplexity = torch.exp(chosen_log_likelihood)
+        rejected_perplexity = torch.exp(rejected_log_likelihood)
+        
+        # Calculate the SimPER loss
+        losses = - chosen_perplexity + rejected_perplexity
+
+        return losses, chosen_log_likelihood.detach(), rejected_log_likelihood.detach()
 
 class SLiCTrainer(PairedPreferenceTrainer):
     use_reference_model = False
