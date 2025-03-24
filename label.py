@@ -9,6 +9,10 @@ where models/llama3-8B-bt/FINAL is the reward model that was trained using a Bra
 outputs.json consists of samples produced by train.sample, and the type of feedback generated is
 pairwise.
 """
+"""
+TODO: Change to reward-model based approach to simple method -> using g_t data
+"""
+
 
 import argparse
 import json
