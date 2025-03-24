@@ -4,7 +4,7 @@ from collections import defaultdict, Counter
 from datasets import load_dataset
 from train.math_parsingutil import extract_answer, check_equivalence
 
-
+#xx
 def evaluate_pass_metrics_with_math500(json_file_path: str):
     with open(json_file_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
