@@ -4,3 +4,4 @@ wandb/
 data/
 .env
 sync.sh
+test.ipynb
