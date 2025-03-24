@@ -1415,3 +1415,37 @@ class BradleyTerryTrainer(PairedPreferenceTrainer):
 
         return losses.sum(), metrics
         
+
+
+
+######### Custom Trainer
+
+class SimPERTrainer(PairedPreferenceTrainer):
+    def loss(self,
+        batch: Dict,
+        policy_chosen_logps: torch.FloatTensor,
+        policy_rejected_logps: torch.FloatTensor,
+        *args,
+        ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+        """Compute the SimPO loss for a batch of policy and reference model token-level log probabilities."""
+        prompt_lengths = (batch['prompt_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        
+        # Calculate chosen completion lengths and per-token-normalized log probs
+        chosen_combined_lengths = (batch['chosen_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        chosen_lengths = (chosen_combined_lengths - prompt_lengths).clamp(min=1)
+        chosen_logps_per_token = policy_chosen_logps.sum(-1) / chosen_lengths
+        
+        # Calculate rejected completion lengths and per-token-normalized log probs
+        rejected_combined_lengths = (batch['rejected_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        rejected_lengths = (rejected_combined_lengths - prompt_lengths).clamp(min=1)
+        rejected_logps_per_token = policy_rejected_logps.sum(-1) / rejected_lengths
+        
+        # Calculate inverse perplexity rewards
+        # Perplexity^(-1) = exp(average_log_prob) = exp(sum_log_probs / length)
+        chosen_inv_perplexity = torch.exp(chosen_logps_per_token)
+        rejected_inv_perplexity = torch.exp(rejected_logps_per_token)
+        
+        # SimPER loss: −Perplexity^(−1)(yw | x) + Perplexity^(−1)(yl | x)
+        losses = -chosen_inv_perplexity + rejected_inv_perplexity
+        
+        return losses, chosen_inv_perplexity.detach(), rejected_inv_perplexity.detach()

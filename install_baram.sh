@@ -1,20 +1,20 @@
 #!/bin/bash
 
-conda create --name halos python=3.10.14 -y
-conda activate halos
+# conda create --name halos python=3.10.14 -y
+# conda activate halos
 
 conda install pip -y
 pip install packaging ninja
 ninja --version
 
 # CUDA 경로 설정 (시스템 환경에 따라 경로 확인 필요)
-export CUDA_HOME=/usr/local/cuda-12.4
+export CUDA_HOME=/usr/local/cuda-12.6  # Updated for CUDA 12.6
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
-# PyTorch 2.4 (CUDA 12.4과 호환되도록 system CUDA 사용)
-pip install torch==2.4.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+# PyTorch 2.4 (CUDA 12.6과 호환되도록 system CUDA 사용)
+pip install torch==2.4.0+cu126 --index-url https://download.pytorch.org/whl/cu126  # Updated for CUDA 12.6
 
-# Flash-Attn 설치 (CUDA 12.4 대응)
+# Flash-Attn 설치 (CUDA 12.6 대응)
 pip install flash-attn==2.6.3 --no-build-isolation --force-reinstall
 
 # 기타 라이브러리
