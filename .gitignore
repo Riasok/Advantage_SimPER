@@ -1,7 +1,3 @@
 outputs/
+**pycache**/
 wandb/
-__pycache__/
-openai_configs.yaml
-lm-evaluation-harness/
-eval/bigcode-evaluation-harness/
-.cache//outputs/

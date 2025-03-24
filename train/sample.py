@@ -118,6 +118,28 @@ def main(args):
                         else:
                             output["prompt"] = prompt
 
+                        if args.datasets == "math500" or "math500" in args.datasets:
+                            print("Processing math500 dataset...")
+                            try:
+                                # Get the example from the dataloader's full_data
+                                example = dataloader.full_data.get(prompt[0]["content"])
+                                
+                                # Check if the example has metadata with an answer
+                                if example and hasattr(example, 'metadata') and example.metadata and "answer" in example.metadata:
+                                    print("Ground truth answer found.")
+                                    # Include the ground truth answer in the output
+                                    output["ground_truth_answer"] = example.metadata["answer"]
+                                    
+                                    # Include the model's generated output
+                                    output["generated_answer"] = sample.text.strip()
+                                    
+                                    print(f"Generated Answer: {output['generated_answer']}")
+                                    print(f"Ground Truth Answer: {output['ground_truth_answer']}")
+                                else:
+                                    print(f"Warning: Couldn't find ground truth answer for prompt: {prompt[0]['content'][:50]}...")
+                            except Exception as e:
+                                print(f"Error processing math500 sample: {str(e)}")
+
                         writer.write_item(output)
 
                     prompt_idx += 1

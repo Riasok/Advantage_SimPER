@@ -297,6 +297,64 @@ def get_shp(split: str, seed: int=0) -> Dataset:
 
     return data
 
+def get_math500(split: str = "test") -> Dataset:
+    """
+    Load the HuggingFaceH4/MATH-500 dataset and convert it into a Dataset.
+    
+    Args:
+        split: one of 'test', 'train' (default: 'test')
+        
+    Returns:
+        A Dataset instance containing MATH-500 problems.
+    """
+    from datasets import load_dataset
+    import tqdm
+    import re
+    
+    rank0_print(f'Loading MATH-500 dataset ({split} split) from Huggingface...')
+    
+    # Load the dataset
+    dataset = load_dataset("HuggingFaceH4/MATH-500", split=split)
+    data = Dataset('MATH-500')
+    
+    if on_rank0():
+        dataset = tqdm.tqdm(dataset, desc='Processing MATH-500')
+    
+    for row in dataset:
+        problem = row['problem']
+        solution = row['solution']
+        answer = row['answer']
+        subject = row['subject']
+        level = row['level']
+        unique_id = row['unique_id']
+        
+        # Create a conversation format with the problem as the human prompt
+        conversation = [
+            {"role": "user", "content": problem}
+        ]
+        
+        # Use the problem as the key
+        data[problem].prompt = conversation
+        
+        # Add the solution and answer as the assistant's response
+        response = f"Solution:\n{solution}\n\nAnswer: {answer}"
+        data[problem].generations.append([{"role": "assistant", "content": response}])
+        
+        # Set this as the preferred response (for SFT)
+        data[problem].sft_index = 0
+        
+        # Add metadata
+        data[problem].dataset_name = 'math500'
+        data[problem].metadata = {
+            "subject": subject,
+            "level": level,
+            "unique_id": unique_id,
+            "answer": answer  # Add the answer to metadata
+        }
+        
+        data[problem].remove_extra_spaces()
+    
+    return data
 
 def get_hh(split: str, only_helpful=False, only_harmless=False) -> Dataset:
     """
