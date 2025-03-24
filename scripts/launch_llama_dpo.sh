@@ -16,11 +16,11 @@ EVAL_EVERY=1000
 ENABLE_INTERMEDIATE_CHECKPOINTS=true
 
 # Hardware configuration
-GPU_DEVICES="1,2"  # Default to "1,2" if not provided
+GPU_DEVICES="0,1,2,3"  # Default to "1,2" if not provided
 
 # Dataset configuration
 DATASETS="[data/dpomath.json]"
-CACHE_DIR="~/reasoning/Advantage_SimPER/outputs"
+CACHE_DIR="$HOME/reasoning/Advantage_SimPER/outputs"
 TEST_DATASET="math500"
 NUM_SAMPLES_PER_PROMPT=1 # for sampling
 

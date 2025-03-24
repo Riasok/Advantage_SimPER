@@ -3,3 +3,4 @@ outputs/
 wandb/
 data/
 .env
+sync.sh
