@@ -264,6 +264,95 @@ def get_math500(split: str = "test") -> Dataset:
     return data
 
 
+def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None) -> "Dataset":
+    """
+    Load the EleutherAI/hendrycks_math dataset and convert it into a Dataset.
+    
+    Args:
+        split: one of 'test', 'train' (default: 'test')
+        subsets: list of math subsets to load, defaults to all subsets if None
+        
+    Returns:
+        A Dataset instance containing math problems from specified subsets.
+    """
+    def extract_boxed_answer(solution: str) -> Optional[str]:
+        """
+        Extract the answer from inside \boxed{} in the solution.
+        
+        Args:
+            solution: The solution text containing \boxed{} notation
+            
+        Returns:
+            The content inside \boxed{} or None if not found
+        """
+        # Match content inside \boxed{...}
+        match = re.search(r'\\boxed\{(.*?)\}', solution, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return None
+    
+    # All available subsets
+    all_subsets = [
+        "algebra", 
+        "counting_and_probability", 
+        "geometry", 
+        "intermediate_algebra", 
+        "number_theory", 
+        "prealgebra", 
+        "precalculus"
+    ]
+    
+    # Use all subsets if none specified
+    if subsets is None:
+        subsets = all_subsets
+    
+    print(f'Loading hendrycks_math dataset ({split} split) with subsets: {", ".join(subsets)}')
+    
+    # Create empty dataset to hold the results
+    data = Dataset('hendrycks_math')
+    
+    # Process each subset
+    for subset in subsets:
+        print(f'Processing subset: {subset}')
+        
+        # Load the dataset for this subset
+        dataset = datasets.load_dataset("EleutherAI/hendrycks_math", subset, split=split)
+        
+        # Process each example
+        for row in tqdm.tqdm(dataset, desc=f'Processing {subset}'):
+            problem = row['problem']
+            solution = row['solution']
+            
+            # Extract answer from \boxed{} in the solution
+            answer = extract_boxed_answer(solution)
+            
+            # Skip examples where we couldn't extract an answer
+            if answer is None:
+                print(f"Warning: Could not extract answer from solution for problem: {problem[:50]}...")
+                continue
+            
+            # Create a conversation format with the problem as the human prompt
+            conversation = [
+                {"role": "user", "content": problem}
+            ]
+            
+            # Use a unique identifier as the key
+            key = f"{subset}_{row['id']}" if 'id' in row else f"{subset}_{hash(problem) % 10000}"
+            
+            # Store the problem, solution, and extracted answer
+            data[key].prompt = conversation
+            
+            # Add the solution and answer as the assistant's response
+            response = f"Solution:\n{solution}\n\nAnswer: {answer}"
+            data[key].generations.append([{"role": "assistant", "content": response}])
+            data[key].answer = answer
+            
+            # Set this as the preferred response (for SFT)
+            data[key].sft_index = 0
+    
+    print(f'Processed {len(data)} total examples across {len(subsets)} subsets')
+    return data
+
 class DataLoader:
     """
     The base data loader class, similar to the one from the DPO repo.

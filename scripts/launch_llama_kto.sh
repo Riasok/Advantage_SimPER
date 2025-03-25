@@ -19,14 +19,14 @@ ENABLE_INTERMEDIATE_CHECKPOINTS=true
 GPU_DEVICES="1,2"  # Default to "1,2" if not provided
 
 # Dataset configuration
-DATASETS="[data/dpomath.json]"
-CACHE_DIR="~/reasoning/Advantage_SimPER/outputs"
-TEST_DATASET="math500"
+DATASETS="[data/llama_math_binary.json]"
+CACHE_DIR="$HOME/reasoning/Advantage_SimPER/outputs"
+TEST_DATASET="hendrycks_math"
 NUM_SAMPLES_PER_PROMPT=8 # for sampling
 
 # Output naming
 EXP_NAME="llama3.1-8b-kto-test-${BETA}-${LEARNING_RATE}"
-OUTPUT_FILE="outputs/llama3.1-8b-kto-${BETA}-${LEARNING_RATE}.json"
+OUTPUT_FILE="data/llama3.1-8b-kto-${BETA}-${LEARNING_RATE}.json"
 
 # ========== ENVIRONMENT SETUP ==========
 export CUDA_VISIBLE_DEVICES=${GPU_DEVICES}

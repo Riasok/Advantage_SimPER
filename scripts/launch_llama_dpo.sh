@@ -19,10 +19,10 @@ ENABLE_INTERMEDIATE_CHECKPOINTS=true
 GPU_DEVICES="0,1"  # Default to "1,2" if not provided
 
 # Dataset configuration
-DATASETS="[data/dpomath.json]"
+DATASETS="[data/llama_math_pairwise.json]"
 CACHE_DIR="$HOME/reasoning/Advantage_SimPER/outputs"
-TEST_DATASET="math500"
-NUM_SAMPLES_PER_PROMPT=1 # for sampling
+TEST_DATASET="hendrycks_math"
+NUM_SAMPLES_PER_PROMPT=8 # for sampling
 
 # Output naming
 EXP_NAME="llama3.1-8b-dpo-${BETA}-${LEARNING_RATE}"
