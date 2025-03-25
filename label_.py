@@ -11,7 +11,7 @@ from train.dataloader import SFTDataLoader
 from collections import defaultdict
 from train.math_parsingutil import *
 
-def convert_to_binary_feedback(samples):
+def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
     """
     Convert samples to binary feedback format. A sample is considered desirable if its
     reward crosses the threshold (label = 1) and undesirable otherwise (label = 0).
@@ -35,9 +35,21 @@ def convert_to_binary_feedback(samples):
             'type': 'binary_feedback',
         }
         feedback.append(feedback_item)
+
+    unique_prompt_keys = list(set(item['prompt_key'] for item in feedback))
+    rnd = random.Random(seed)
+    rnd.shuffle(unique_prompt_keys)
+    n_test = int(fraction_test * len(unique_prompt_keys))
+    test_prompt_keys = set(unique_prompt_keys[:n_test])
+    
+    # 각 피드백 항목에 split 정보를 추가하고 prompt_key는 제거
+    for item in feedback:
+        item['split'] = 'test' if item['prompt_key'] in test_prompt_keys else 'train'
+        item.pop('prompt_key', None)
+
     return feedback
 
-def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42) -> List[Dict]:
+def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_test = 0.2) -> List[Dict]:
     """
     1) sample['prompt'] (리스트)를 합쳐서 prompt_key로 사용
     2) extract_answer()로 정답 여부 계산 -> sample['reward'] = 1(정답) or 0(오답)
@@ -142,11 +154,21 @@ def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42) -> List[Di
                 }
                 pairwise_feedback.append(feedback_item)
 
+    unique_prompt_keys = list(set(item['prompt_key'] for item in pairwise_feedback))
+    rnd = random.Random(seed)
+    rnd.shuffle(unique_prompt_keys)
+    n_test = int(fraction_test * len(unique_prompt_keys))
+    test_prompt_keys = set(unique_prompt_keys[:n_test])
+    
+    for item in pairwise_feedback:
+        item['split'] = 'test' if item['prompt_key'] in test_prompt_keys else 'train'
+        item.pop('prompt_key', None)
+
     return pairwise_feedback
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python process_samples.py <input_file.json> <feedback_type: binary|pairwise>")
+        print("Usage: python label.py <input_file.json> <feedback_type: binary|pairwise>")
         sys.exit(1)
 
     input_file = sys.argv[1]

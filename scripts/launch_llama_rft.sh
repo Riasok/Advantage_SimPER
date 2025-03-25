@@ -19,7 +19,7 @@ ENABLE_INTERMEDIATE_CHECKPOINTS=true
 GPU_DEVICES="1,2"  # Default to "1,2" if not provided
 
 # Dataset configuration
-DATASETS="[data/dpomath.json]"
+DATASETS="[data/outputs_8_pairwise_feedback]"
 CACHE_DIR="~/reasoning/HALOs/outputs"
 TEST_DATASET="math500"
 NUM_SAMPLES_PER_PROMPT=8 # for sampling

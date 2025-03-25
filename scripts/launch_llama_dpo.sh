@@ -4,19 +4,19 @@
 # Model configuration
 MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
 BETA=0.1
-LEARNING_RATE=1e-6
+LEARNING_RATE=1e-5
 USE_PEFT=true
 
 # Training configuration
-BATCH_SIZE=24
-GRAD_ACCUM_STEPS=2
-EVAL_BATCH_SIZE=24
-N_EPOCHS=1
+BATCH_SIZE=16
+GRAD_ACCUM_STEPS=4
+EVAL_BATCH_SIZE=16
+N_EPOCHS=2
 EVAL_EVERY=1000
 ENABLE_INTERMEDIATE_CHECKPOINTS=true
 
 # Hardware configuration
-GPU_DEVICES="0,1,2,3"  # Default to "1,2" if not provided
+GPU_DEVICES="0,1"  # Default to "1,2" if not provided
 
 # Dataset configuration
 DATASETS="[data/dpomath.json]"
@@ -57,9 +57,8 @@ accelerate launch \
   ++config.intermediate_checkpoints=${ENABLE_INTERMEDIATE_CHECKPOINTS} \
   ++config.eval_every=${EVAL_EVERY} \
   ++model.use_peft=${USE_PEFT} \
-  ++n_examples=24
-#  ++n_epochs=${N_EPOCHS}
-# ========== EVALUATION ==========sssd
+  ++n_epochs=${N_EPOCHS}
+========== EVALUATION ==========sssd
 echo "Starting evaluation on ${TEST_DATASET}"
 python -m train.sample ${CKPT} \
   --gpu_count ${GPU_COUNT} \

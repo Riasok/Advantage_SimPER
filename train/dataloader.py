@@ -48,6 +48,7 @@ class Example:
     dataset_name: str = ''
     original_prompt: str = ''                                   # the unformatted prompt (needed to recover instruction for AlpacaEval)
     answer: str = ''                                            # ground truth answer for math-problem solving
+    advantage: float = 0.0                                      # Advantage value
 
     def num_generations(self):
         return len(self.generations)
@@ -172,6 +173,8 @@ def get_feedback(feedback_path: str, split: str) -> Dataset:
                 example.desirable.append(bool(sample['label']))
                 example.scores.append(sample['reward'])
                 example.dataset_name = 'feedback'
+                if "advantage" in sample.keys():
+                    example.advantage = sample['advantage']
             
             # For binary feedback, use any desirable response as the SFT target
             # If no desirable responses, use the highest scoring one
