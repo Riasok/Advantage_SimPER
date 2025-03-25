@@ -1487,21 +1487,23 @@ class AdvantageSimPERTrainer(UnpairedPreferenceTrainer):
         *args,
     ):
         advantages = batch["advantage"]
-        advantages = torch.Tensor(advantages).to(self.policy_dtype).to(self.accelerator.device)
-
+        advantages = torch.Tensor(advantages).to(self.policy_dtype).to(self.accelerator.device).detach()
         # every prompt is chosen
         # just some tokens are negative -> use advantage value!
-
         prompt_lengths = (batch['prompt_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        
         if policy_chosen_logps.shape[0] != 0:
             chosen_combined_lengths = (batch['chosen_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
-            chosen_lengths = (chosen_combined_lengths - prompt_lengths).clamp(min=1)  
+            chosen_lengths = (chosen_combined_lengths - prompt_lengths).clamp(min=1)
             chosen_logps_per_token = policy_chosen_logps.sum(-1) / chosen_lengths
             chosen_losses = torch.exp(chosen_logps_per_token)
+            # Weight the losses with advantages
+            losses = -chosen_losses * advantages
+            rejected_losses = torch.Tensor([]).to(self.policy_dtype).to(self.accelerator.device)
         else:
             # important to cast to policy_dtype; otherwise error will occur during all_gather
+            chosen_losses = torch.Tensor([]).to(self.policy_dtype).to(self.accelerator.device)
             rejected_losses = torch.Tensor([]).to(self.policy_dtype).to(self.accelerator.device)
-
-        losses = -chosen_losses * advantages
-
+            losses = torch.Tensor([]).to(self.policy_dtype).to(self.accelerator.device)
+        
         return losses, chosen_losses.detach(), rejected_losses.detach()
