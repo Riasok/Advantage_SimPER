@@ -275,21 +275,7 @@ def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None
     Returns:
         A Dataset instance containing math problems from specified subsets.
     """
-    def extract_boxed_answer(solution: str) -> Optional[str]:
-        """
-        Extract the answer from inside \boxed{} in the solution.
-        
-        Args:
-            solution: The solution text containing \boxed{} notation
-            
-        Returns:
-            The content inside \boxed{} or None if not found
-        """
-        # Match content inside \boxed{...}
-        match = re.search(r'\\boxed\{(.*?)\}', solution, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        return None
+    from train.math_parsingutil import extract_answer
     
     # All available subsets
     all_subsets = [
@@ -324,7 +310,7 @@ def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None
             solution = row['solution']
             
             # Extract answer from \boxed{} in the solution
-            answer = extract_boxed_answer(solution)
+            answer = extract_answer(solution)
             
             # Skip examples where we couldn't extract an answer
             if answer is None:

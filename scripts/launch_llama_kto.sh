@@ -8,18 +8,18 @@ LEARNING_RATE=1e-6
 USE_PEFT=true
 
 # Training configuration
-BATCH_SIZE=16
-GRAD_ACCUM_STEPS=16
-EVAL_BATCH_SIZE=16
+BATCH_SIZE=24
+GRAD_ACCUM_STEPS=3
+EVAL_BATCH_SIZE=24
 N_EPOCHS=1
 EVAL_EVERY=1000
 ENABLE_INTERMEDIATE_CHECKPOINTS=true
 
 # Hardware configuration
-GPU_DEVICES="1,2"  # Default to "1,2" if not provided
+GPU_DEVICES="0,1,2,3"  # Default to "1,2" if not provided
 
 # Dataset configuration
-DATASETS="[data/llama_math_binary.json]"
+DATASETS="[data/llama_math_binary_feedback.json]"
 CACHE_DIR="$HOME/reasoning/Advantage_SimPER/outputs"
 TEST_DATASET="hendrycks_math"
 NUM_SAMPLES_PER_PROMPT=8 # for sampling

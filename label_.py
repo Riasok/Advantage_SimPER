@@ -147,8 +147,8 @@ def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_t
                 feedback_item = {
                     'prompt_key': prompt_key,       
                     'prompt': sample_A.get('prompt', []),
-                    'output_A': sample_A['output'],
-                    'output_B': sample_B['output'],
+                    'output_A': format_output(sample_A['output']),
+                    'output_B': format_output(sample_B['output']),
                     'label': label,
                     'reward_A': sample_A['reward'],
                     'reward_B': sample_B['reward'],
@@ -279,7 +279,7 @@ def main():
 
     output_score = input_file.replace(".json","_score.json")
     results = generate_accuracy_report(samples)
-    with open(output_score, "r", encoding="utf-8") as f:
+    with open(output_score, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
     print(f"Feedback saved to {output_file}")

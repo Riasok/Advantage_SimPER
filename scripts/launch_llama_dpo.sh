@@ -19,7 +19,7 @@ ENABLE_INTERMEDIATE_CHECKPOINTS=true
 GPU_DEVICES="0,1"  # Default to "1,2" if not provided
 
 # Dataset configuration
-DATASETS="[data/llama_math_pairwise.json]"
+DATASETS="[data/llama_math_pairwise_feedback.json]"
 CACHE_DIR="$HOME/reasoning/Advantage_SimPER/outputs"
 TEST_DATASET="hendrycks_math"
 NUM_SAMPLES_PER_PROMPT=8 # for sampling
@@ -57,14 +57,16 @@ accelerate launch \
   ++config.intermediate_checkpoints=${ENABLE_INTERMEDIATE_CHECKPOINTS} \
   ++config.eval_every=${EVAL_EVERY} \
   ++model.use_peft=${USE_PEFT} \
-  ++n_epochs=${N_EPOCHS}
-========== EVALUATION ==========sssd
-echo "Starting evaluation on ${TEST_DATASET}"
-python -m train.sample ${CKPT} \
-  --gpu_count ${GPU_COUNT} \
-  --output_file ${OUTPUT_FILE} \
-  --datasets ${TEST_DATASET} \
-  --num_samples_per_prompt ${NUM_SAMPLES_PER_PROMPT} \
-  --split test
+  ++n_samples=4
+#   ++n_epochs=${N_EPOCHS}
 
-echo "Training and evaluation complete"
+# ========== EVALUATION ==========
+# echo "Starting evaluation on ${TEST_DATASET}"
+# python -m train.sample ${CKPT} \
+#   --gpu_count ${GPU_COUNT} \
+#   --output_file ${OUTPUT_FILE} \
+#   --datasets ${TEST_DATASET} \
+#   --num_samples_per_prompt ${NUM_SAMPLES_PER_PROMPT} \
+#   --split test
+
+# echo "Training and evaluation complete"
