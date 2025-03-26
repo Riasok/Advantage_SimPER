@@ -266,56 +266,30 @@ def get_math500(split: str = "test") -> Dataset:
 
 def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None) -> "Dataset":
     """
-    Load the EleutherAI/hendrycks_math dataset and convert it into a Dataset.
+    Load the nlile/hendrycks-MATH-benchmark dataset and convert it into a Dataset.
     
     Args:
-        split: one of 'test', 'train' (default: 'test')
+        split: one of 'test', 'train' (default: 'train')
         subsets: list of math subsets to load, defaults to all subsets if None
         
     Returns:
         A Dataset instance containing math problems from specified subsets.
     """
-    from train.math_parsingutil import extract_answer
-    
-    # All available subsets
-    all_subsets = [
-        "algebra", 
-        "counting_and_probability", 
-        "geometry", 
-        "intermediate_algebra", 
-        "number_theory", 
-        "prealgebra", 
-        "precalculus"
-    ]
-    
-    # Use all subsets if none specified
-    if subsets is None:
-        subsets = all_subsets
-    
-    print(f'Loading hendrycks_math dataset ({split} split) with subsets: {", ".join(subsets)}')
+    print('Loading hendrycks_math dataset')
     
     # Create empty dataset to hold the results
     data = Dataset('hendrycks_math')
     
-    # Process each subset
-    for subset in subsets:
-        print(f'Processing subset: {subset}')
-        
-        # Load the dataset for this subset
-        dataset = datasets.load_dataset("EleutherAI/hendrycks_math", subset, split=split)
-        
-        # Process each example
-        for row in tqdm.tqdm(dataset, desc=f'Processing {subset}'):
+    # Load the complete dataset
+    dataset = datasets.load_dataset("nlile/hendrycks-MATH-benchmark", split=split)
+    
+    # Process the dataset
+    for row in tqdm.tqdm(dataset, desc=f'Processing hendrycks_math'):
+        # Check if the problem belongs to a requested subset
+        if row['type'] in subsets:
             problem = row['problem']
             solution = row['solution']
-            
-            # Extract answer from \boxed{} in the solution
-            answer = extract_answer(solution)
-            
-            # Skip examples where we couldn't extract an answer
-            if answer is None:
-                print(f"Warning: Could not extract answer from solution for problem: {problem[:50]}...")
-                continue
+            answer = row['answer']  # Use the provided answer directly
             
             # Create a conversation format with the problem as the human prompt
             conversation = [
@@ -323,9 +297,9 @@ def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None
             ]
             
             # Use a unique identifier as the key
-            key = f"{subset}_{row['id']}" if 'id' in row else f"{subset}_{hash(problem) % 10000}"
+            key = f"{row['type']}_{row['id']}" if 'id' in row else f"{row['type']}_{hash(problem) % 10000}"
             
-            # Store the problem, solution, and extracted answer
+            # Store the problem, solution, and answer
             data[key].prompt = conversation
             
             # Add the solution and answer as the assistant's response
