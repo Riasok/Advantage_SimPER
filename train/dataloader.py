@@ -236,7 +236,7 @@ def get_hendrycks_MATH(split: str = "test") -> Dataset:
     rank0_print(f'Loading hendrycks_MATH dataset ({split} split) from Huggingface...')
     
     # Load the dataset
-    dataset = datasets.load_dataset(""nlile/hendrycks-MATH-benchmark"", split=split)
+    dataset = datasets.load_dataset("nlile/hendrycks-MATH-benchmark", split=split)
     data = Dataset('hendrycks_MATH')
     
     if on_rank0():
