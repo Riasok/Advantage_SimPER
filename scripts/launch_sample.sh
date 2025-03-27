@@ -15,10 +15,10 @@ export HF_HUB_OFFLINE=0
 
 python -m train.sample ${MODEL_NAME} \
   --gpu_count 4 \
-  --output_file data/llama_math.json \
-  --datasets hendrycks_math \
+  --output_file data/llama_train_math.json \
+  --datasets hendrycks_MATH \
   --num_samples_per_prompt 8 \
-  --split test
+  --split train
 
-python label_.py data/llama_math.json binary
+python label_.py data/llama_train_math.json binary
 # python label_.py data/llama_math.json pairwise
