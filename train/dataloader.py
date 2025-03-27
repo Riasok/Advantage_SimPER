@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from .utils import rank0_print, on_rank0, delete_dict
 import pandas as pd
 import numpy as np
-
+import math
 @dataclass
 class Example:
     """
@@ -222,9 +222,9 @@ def get_feedback(feedback_path: str, split: str) -> Dataset:
     
     return data
 
-def get_math500(split: str = "test") -> Dataset:
+def get_hendrycks_MATH(split: str = "test") -> Dataset:
     """
-    Load the HuggingFaceH4/MATH-500 dataset and convert it into a Dataset.
+    Load the "nlile/hendrycks-MATH-benchmark" dataset and convert it into a Dataset.
     
     Args:
         split: one of 'test', 'train' (default: 'test')
@@ -233,14 +233,14 @@ def get_math500(split: str = "test") -> Dataset:
         A Dataset instance containing MATH-500 problems.
     """
     
-    rank0_print(f'Loading MATH-500 dataset ({split} split) from Huggingface...')
+    rank0_print(f'Loading hendrycks_MATH dataset ({split} split) from Huggingface...')
     
     # Load the dataset
-    dataset = datasets.load_dataset("HuggingFaceH4/MATH-500", split=split)
-    data = Dataset('MATH-500')
+    dataset = datasets.load_dataset(""nlile/hendrycks-MATH-benchmark"", split=split)
+    data = Dataset('hendrycks_MATH')
     
     if on_rank0():
-        dataset = tqdm.tqdm(dataset, desc='Processing MATH-500')
+        dataset = tqdm.tqdm(dataset, desc='Processing hendrycks_MATH')
     
     for row in dataset:
         problem = row['problem']
@@ -261,82 +261,6 @@ def get_math500(split: str = "test") -> Dataset:
         data[problem].answer = answer
         # Set this as the preferred response (for SFT)
         data[problem].sft_index = 0    
-    return data
-
-
-def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None) -> "Dataset":
-    """
-    Load the EleutherAI/hendrycks_math dataset and convert it into a Dataset.
-    
-    Args:
-        split: one of 'test', 'train' (default: 'test')
-        subsets: list of math subsets to load, defaults to all subsets if None
-        
-    Returns:
-        A Dataset instance containing math problems from specified subsets.
-    """
-    from train.math_parsingutil import extract_answer
-    
-    # All available subsets
-    all_subsets = [
-        "algebra",
-        "counting_and_probability",
-        "geometry",
-        "intermediate_algebra",
-        "number_theory",
-        "prealgebra",
-        "precalculus"
-    ]
-    
-    # Use all subsets if none specified
-    if subsets is None:
-        subsets = all_subsets
-        
-    print(f'Loading hendrycks_math dataset ({split} split) with subsets: {", ".join(subsets)}')
-    
-    # Create empty dataset to hold the results
-    data = Dataset('hendrycks_math')
-    
-    # Process each subset
-    for subset in subsets:
-        print(f'Processing subset: {subset}')
-        
-        # Load the dataset for this subset
-        dataset = datasets.load_dataset("EleutherAI/hendrycks_math", subset, split=split)
-        
-        # Process each example
-        for row in tqdm.tqdm(dataset, desc=f'Processing {subset}'):
-            problem = row['problem']
-            solution = row['solution']
-            
-            # Extract answer from \boxed{} in the solution
-            answer = extract_answer(solution)
-            
-            # Skip examples where we couldn't extract an answer
-            if answer is None:
-                print(f"Warning: Could not extract answer from solution for problem: {problem[:50]}...")
-                continue
-                
-            # Create a conversation format with the problem as the human prompt
-            conversation = [
-                {"role": "user", "content": problem}
-            ]
-            
-            # Use a unique identifier as the key
-            key = f"{subset}_{row['id']}" if 'id' in row else f"{subset}_{hash(problem) % 10000}"
-            
-            # Store the problem, solution, and extracted answer
-            data[key].prompt = conversation
-            
-            # Add the solution and answer as the assistant's response
-            response = f"Solution:\n{solution}\n\nAnswer: {answer}"
-            data[key].generations.append([{"role": "assistant", "content": response}])
-            data[key].answer = answer
-            
-            # Set this as the preferred response (for SFT)
-            data[key].sft_index = 0
-            
-    print(f'Processed {len(data)} total examples across {len(subsets)} subsets')
     return data
 
 class DataLoader:
