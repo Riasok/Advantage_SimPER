@@ -28,7 +28,7 @@ max_grad_norm: 5.0
 v_head_max_grad_norm: 0.10
 
 # the maximum allowed length for an input (prompt + response) (usually has to be smaller than what the model supports)
-max_length: 1024
+max_length: 2048
 
 # the maximum allowed length for a prompt (remainder will be dedicated to the completion)
 max_prompt_length: 512

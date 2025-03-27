@@ -1507,3 +1507,27 @@ class AdvantageSimPERTrainer(UnpairedPreferenceTrainer):
             losses = torch.Tensor([]).to(self.policy_dtype).to(self.accelerator.device)
         
         return losses, chosen_losses.detach(), rejected_losses.detach()
+    
+
+
+class DPONLLTrainer(PairedPreferenceTrainer):
+    def loss(self,
+        batch: Dict,
+        policy_chosen_logps: torch.FloatTensor,
+        policy_rejected_logps: torch.FloatTensor,
+        reference_chosen_logps: torch.FloatTensor,
+        reference_rejected_logps: torch.FloatTensor,
+        *args,
+        ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+        prompt_lengths = (batch['prompt_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        chosen_combined_lengths = (batch['chosen_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+        chosen_lengths = (chosen_combined_lengths - prompt_lengths).clamp(min=1)
+        chosen_logps_per_token = policy_chosen_logps.sum(-1) / chosen_lengths
+
+        """Compute the DPO loss for a batch of policy and reference model token-level log probabilities."""
+        chosen_rewards = self.config.loss.beta * (policy_chosen_logps.sum(-1) - reference_chosen_logps.sum(-1))
+        rejected_rewards = self.config.loss.beta * (policy_rejected_logps.sum(-1) - reference_rejected_logps.sum(-1))
+
+        losses = -F.logsigmoid(chosen_rewards - rejected_rewards) - self.config.loss.alpha * chosen_logps_per_token
+
+        return losses, chosen_rewards.detach(), rejected_rewards.detach()
