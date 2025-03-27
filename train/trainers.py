@@ -471,7 +471,7 @@ class UnpairedPreferenceTrainer(BasicTrainer):
         metrics[f'loss/{mode}'] = self.accelerator.gather(losses.mean().detach()).mean()
 
         del policy_chosen_logps, policy_rejected_logps
-        del combined_rewards, combined_statuses, all_rewards, all_statuses, chosen_rewards_idx, rejected_rewards_idx, all_devices_losses
+        del combined_rewards, combined_statuses, all_rewards, all_statuses, chosen_rewards_idx, rejected_rewards_idx #, all_devices_losses
 
         if self.reference_model:
             del reference_chosen_logps, reference_rejected_logps
@@ -1493,7 +1493,7 @@ class AdvantageSimPERTrainer(UnpairedPreferenceTrainer):
         prompt_lengths = (batch['prompt_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
         
         if policy_chosen_logps.shape[0] != 0:
-            chosen_combined_lengths = (batch['chosen_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
+            chosen_combined_lengths = (batch['target_combined_input_ids'] != self.tokenizer.pad_token_id).sum(-1).clamp(min=1)
             chosen_lengths = (chosen_combined_lengths - prompt_lengths).clamp(min=1)
             chosen_logps_per_token = policy_chosen_logps.sum(-1) / chosen_lengths
             chosen_losses = torch.exp(chosen_logps_per_token)

@@ -266,40 +266,66 @@ def get_math500(split: str = "test") -> Dataset:
 
 def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None) -> "Dataset":
     """
-    Load the nlile/hendrycks-MATH-benchmark dataset and convert it into a Dataset.
+    Load the EleutherAI/hendrycks_math dataset and convert it into a Dataset.
     
     Args:
-        split: one of 'test', 'train' (default: 'train')
+        split: one of 'test', 'train' (default: 'test')
         subsets: list of math subsets to load, defaults to all subsets if None
         
     Returns:
         A Dataset instance containing math problems from specified subsets.
     """
-    print('Loading hendrycks_math dataset')
+    from train.math_parsingutil import extract_answer
+    
+    # All available subsets
+    all_subsets = [
+        "algebra",
+        "counting_and_probability",
+        "geometry",
+        "intermediate_algebra",
+        "number_theory",
+        "prealgebra",
+        "precalculus"
+    ]
+    
+    # Use all subsets if none specified
+    if subsets is None:
+        subsets = all_subsets
+        
+    print(f'Loading hendrycks_math dataset ({split} split) with subsets: {", ".join(subsets)}')
     
     # Create empty dataset to hold the results
     data = Dataset('hendrycks_math')
     
-    # Load the complete dataset
-    dataset = datasets.load_dataset("nlile/hendrycks-MATH-benchmark", split=split)
-    
-    # Process the dataset
-    for row in tqdm.tqdm(dataset, desc=f'Processing hendrycks_math'):
-        # Check if the problem belongs to a requested subset
-        if row['type'] in subsets:
+    # Process each subset
+    for subset in subsets:
+        print(f'Processing subset: {subset}')
+        
+        # Load the dataset for this subset
+        dataset = datasets.load_dataset("EleutherAI/hendrycks_math", subset, split=split)
+        
+        # Process each example
+        for row in tqdm.tqdm(dataset, desc=f'Processing {subset}'):
             problem = row['problem']
             solution = row['solution']
-            answer = row['answer']  # Use the provided answer directly
             
+            # Extract answer from \boxed{} in the solution
+            answer = extract_answer(solution)
+            
+            # Skip examples where we couldn't extract an answer
+            if answer is None:
+                print(f"Warning: Could not extract answer from solution for problem: {problem[:50]}...")
+                continue
+                
             # Create a conversation format with the problem as the human prompt
             conversation = [
                 {"role": "user", "content": problem}
             ]
             
             # Use a unique identifier as the key
-            key = f"{row['type']}_{row['id']}" if 'id' in row else f"{row['type']}_{hash(problem) % 10000}"
+            key = f"{subset}_{row['id']}" if 'id' in row else f"{subset}_{hash(problem) % 10000}"
             
-            # Store the problem, solution, and answer
+            # Store the problem, solution, and extracted answer
             data[key].prompt = conversation
             
             # Add the solution and answer as the assistant's response
@@ -309,7 +335,7 @@ def get_hendrycks_math(split: str = "train", subsets: Optional[List[str]] = None
             
             # Set this as the preferred response (for SFT)
             data[key].sft_index = 0
-    
+            
     print(f'Processed {len(data)} total examples across {len(subsets)} subsets')
     return data
 
@@ -800,6 +826,7 @@ class UnpairedPreferenceDataLoader(DataLoader):
                 batch_element['truncation_mode'] = example.truncation_mode
                 batch_element['conversation'] = example.prompt
                 batch_element['generation'] = generation
+                batch_element['advantage'] = example.advantage 
                 example_queue.append(batch_element)
                 
                 if len(example_queue) >= self.microbatch_size:

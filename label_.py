@@ -22,23 +22,35 @@ def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
     The reward for a sample is set to 1 if the answer extracted from the output (via extract_answer)
     is equal to the sample's 'answer', and 0 otherwise.
     """
-    feedback = []
+    # Group samples by prompt key
+    grouped_by_prompt = defaultdict(list)
+    
     for sample in samples:
         # Extract answer from sample's output
         extracted_ans = extract_answer(sample['output'])
         # Compare the extracted answer to the ground truth answer provided in the sample
         reward = 1 if extracted_ans == sample.get("answer") else 0
         prompt_key = ' '.join([x['content'] for x in sample['prompt']])
-        feedback_item = {
-            'prompt_key': prompt_key,
-            'prompt': sample['prompt'],
-            'output': format_output(sample['output']),
-            'label': 1 if reward > 0 else 0,
-            'reward': reward,
-            'type': 'binary_feedback',
-        }
-        feedback.append(feedback_item)
-
+        
+        sample['prompt_key'] = prompt_key
+        sample['reward'] = reward
+        sample['extracted_answer'] = extracted_ans
+        
+        grouped_by_prompt[prompt_key].append(sample)
+    
+    feedback = []
+    for prompt_key, group in grouped_by_prompt.items():
+        for sample in group:
+            feedback_item = {
+                'prompt_key': prompt_key,
+                'prompt': sample['prompt'],
+                'output': format_output(sample['output']),
+                'label': 1 if sample['reward'] > 0 else 0,
+                'reward': sample['reward'],
+                'type': 'binary_feedback',
+            }
+            feedback.append(feedback_item)
+    
     unique_prompt_keys = list(set(item['prompt_key'] for item in feedback))
     rnd = random.Random(seed)
     rnd.shuffle(unique_prompt_keys)
@@ -50,6 +62,88 @@ def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
         item['split'] = 'test' if item['prompt_key'] in test_prompt_keys else 'train'
         item.pop('prompt_key', None)
 
+    return feedback
+
+def convert_to_advantage_feedback(samples, seed = 42, fraction_test = 0.2):
+    """
+    Convert samples to advantage feedback format. All samples are labeled as desirable (label = 1),
+    but they have different advantage scores based on how their correctness compares to the average.
+    
+    The advantage is calculated as: (r - mean(r_i)) / std(r_i) where r_i are all rewards for the same prompt.
+    Samples with an advantage of 0 are dropped.
+    """
+    # Group samples by prompt key
+    grouped_by_prompt = defaultdict(list)
+    
+    # First process all samples to extract answers and calculate rewards
+    for sample in samples:
+        extracted_ans = extract_answer(sample['output'])
+        reward = 1 if extracted_ans == sample.get("answer") else 0
+        prompt_key = ' '.join([x['content'] for x in sample['prompt']])
+        
+        sample['prompt_key'] = prompt_key
+        sample['reward'] = reward
+        sample['extracted_answer'] = extracted_ans
+        
+        grouped_by_prompt[prompt_key].append(sample)
+    
+    # Now calculate advantage for each sample
+    feedback = []
+    for prompt_key, group in grouped_by_prompt.items():
+        # Calculate mean reward for this prompt
+        rewards = [s['reward'] for s in group]
+        mean_reward = sum(rewards) / len(rewards) if rewards else 0
+        
+        # Calculate standard deviation
+        if len(rewards) > 1:
+            variance = sum((r - mean_reward) ** 2 for r in rewards) / len(rewards)
+            std_dev = variance ** 0.5
+        else:
+            std_dev = 0
+        
+        # Avoid division by zero
+        std_dev = max(std_dev, 1e-8)
+        
+        # Check if all samples have same advantage (i.e., all have the same reward value)
+        # If all rewards are the same, the advantage will be 0 for all of them
+        all_same = all(r == rewards[0] for r in rewards)
+        
+        # If all advantages would be 0, skip this entire group
+        if all_same:
+            print(f"Skipping group with prompt key '{prompt_key}' - all samples have the same reward")
+            continue
+        
+        for sample in group:
+            # Calculate advantage: (r - mean(r)) / std(r)
+            advantage = (sample['reward'] - mean_reward) / std_dev
+            
+            # Skip samples with advantage of 0
+            if abs(advantage) < 1e-8:
+                continue
+                
+            feedback_item = {
+                'prompt_key': prompt_key,
+                'prompt': sample['prompt'],
+                'output': format_output(sample['output']),
+                'label': 1,  # All samples are labeled as desirable
+                'reward': sample['reward'],
+                'advantage': advantage,
+                'type': 'binary_feedback',
+            }
+            feedback.append(feedback_item)
+    
+    unique_prompt_keys = list(set(item['prompt_key'] for item in feedback))
+    rnd = random.Random(seed)
+    rnd.shuffle(unique_prompt_keys)
+    n_test = int(fraction_test * len(unique_prompt_keys))
+    test_prompt_keys = set(unique_prompt_keys[:n_test])
+    
+    # Add split information and remove prompt key
+    for item in feedback:
+        item['split'] = 'test' if item['prompt_key'] in test_prompt_keys else 'train'
+        item.pop('prompt_key', None)
+
+    print(f"Created {len(feedback)} advantage feedback samples after filtering out samples with advantage = 0")
     return feedback
 
 def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_test = 0.2) -> List[Dict]:
@@ -170,7 +264,6 @@ def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_t
     return pairwise_feedback
 
 
-
 def generate_accuracy_report(samples: List[Dict]) -> Dict:
     """
     Generate a comprehensive accuracy report for the samples.
@@ -180,6 +273,7 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
     - pass_at_n: Whether any answer was correct per problem
     - pass_at_1: Whether the first answer was correct per problem
     - overall_accuracy: Percentage of correct answers out of all
+    - majority_vote: Whether the majority of answers were correct per problem
     """
     # Group samples by prompt
     grouped_by_prompt = defaultdict(list)
@@ -194,6 +288,7 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
             reward = sample['reward']
         else:
             extracted_ans = extract_answer(sample['output'])
+            sample['extracted_answer'] = extracted_ans
             reward = 1 if extracted_ans == sample.get('answer') else 0
             
         # Add reward to sample if not there
@@ -206,6 +301,7 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
     total_problems = len(grouped_by_prompt)
     problems_with_correct_answer = 0
     problems_with_first_correct = 0
+    problems_with_majority_correct = 0
     total_answers = 0
     total_correct_answers = 0
     
@@ -217,11 +313,37 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
         any_correct = any(sample['reward'] == 1 for sample in samples_for_prompt)
         first_correct = samples_for_prompt[0]['reward'] == 1 if samples_for_prompt else False
         
+        # Majority voting calculation - find most common answer
+        extracted_answers = {}
+        for sample in samples_for_prompt:
+            # Extract the answer from the output if not already done
+            if 'extracted_answer' not in sample:
+                sample['extracted_answer'] = extract_answer(sample['output'])
+            
+            # Count each unique answer
+            answer = sample['extracted_answer']
+            extracted_answers[answer] = extracted_answers.get(answer, 0) + 1
+        
+        # Find the most common answer (majority vote)
+        majority_answer = None
+        max_count = 0
+        for answer, count in extracted_answers.items():
+            if count > max_count:
+                max_count = count
+                majority_answer = answer
+        
+        # Check if majority answer is correct
+        correct_answer = samples_for_prompt[0].get('answer')
+        majority_correct = (majority_answer == correct_answer)
+        
         if any_correct:
             problems_with_correct_answer += 1
         
         if first_correct:
             problems_with_first_correct += 1
+            
+        if majority_correct:
+            problems_with_majority_correct += 1
             
         # Count total answers and correct answers
         total_answers += len(samples_for_prompt)
@@ -230,6 +352,7 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
     # Calculate percentages
     pass_at_n_percent = (problems_with_correct_answer / total_problems * 100) if total_problems > 0 else 0
     pass_at_1_percent = (problems_with_first_correct / total_problems * 100) if total_problems > 0 else 0
+    majority_vote_percent = (problems_with_majority_correct / total_problems * 100) if total_problems > 0 else 0
     overall_accuracy_percent = (total_correct_answers / total_answers * 100) if total_answers > 0 else 0
     
     # Create report
@@ -245,6 +368,10 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
             "count": problems_with_first_correct,
             "percentage": round(pass_at_1_percent, 2)
         },
+        "majority_vote": {
+            "count": problems_with_majority_correct,
+            "percentage": round(majority_vote_percent, 2)
+        },
         "overall_accuracy": {
             "percentage": round(overall_accuracy_percent, 2)
         }
@@ -255,7 +382,7 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python label.py <input_file.json> <feedback_type: binary|pairwise>")
+        print("Usage: python label.py <input_file.json> <feedback_type: binary|pairwise|advantage>")
         sys.exit(1)
 
     input_file = sys.argv[1]
@@ -270,8 +397,11 @@ def main():
     elif feedback_type == "pairwise":
         feedback = convert_to_pairwise_feedback(samples)
         output_file = input_file.replace(".json", "_pairwise_feedback.json")
+    elif feedback_type == "advantage":
+        feedback = convert_to_advantage_feedback(samples)
+        output_file = input_file.replace(".json", "_advantage_feedback.json")
     else:
-        print("Invalid feedback type. Choose either 'binary' or 'pairwise'.")
+        print("Invalid feedback type. Choose either 'binary', 'pairwise', or 'advantage'.")
         sys.exit(1)
 
     with open(output_file, "w", encoding="utf-8") as f:
@@ -283,6 +413,7 @@ def main():
         json.dump(results, f, ensure_ascii=False, indent=2)
 
     print(f"Feedback saved to {output_file}")
+    print(f"Scores saved to {output_score}")
 
 if __name__ == "__main__":
     main()

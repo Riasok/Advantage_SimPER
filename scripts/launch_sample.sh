@@ -18,7 +18,7 @@ python -m train.sample ${MODEL_NAME} \
   --output_file data/llama_math.json \
   --datasets hendrycks_math \
   --num_samples_per_prompt 8 \
-  --split train
+  --split test
 
 python label_.py data/llama_math.json binary
 # python label_.py data/llama_math.json pairwise
