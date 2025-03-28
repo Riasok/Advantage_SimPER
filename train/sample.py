@@ -50,7 +50,7 @@ class PromptCreator:
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": (
                 "Solve this math problem step by step. At the end, make sure to finish the calculation and state the answer exactly once in the following format: \n"
-                "\"The final answer is \\boxed{X}\"\n, where X is your final answer.\n\n" + question
+                "\"The final answer is \\boxed{X}\"\n, where X is your final answer.\n\n Q:" + question
             )}
         ]
         return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt = True)

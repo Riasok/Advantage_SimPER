@@ -133,6 +133,7 @@ def main(config: DictConfig):
         frac_unique_desirable=config.frac_unique_desirable,
         frac_unique_undesirable=config.frac_unique_undesirable,
         control_tokens=config.loss.get("control_tokens", {}),
+        use_chat_template=config.model.use_chat_template,
     )
     train_iterator = data_loader_class(
         config.datasets, 

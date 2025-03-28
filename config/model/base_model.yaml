@@ -69,3 +69,5 @@ reward_model:
   model_class: AutoModelForBradleyTerry
   dtype: float32
   attn_implementation: flash_attention_2
+
+use_chat_template: False

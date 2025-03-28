@@ -2,16 +2,16 @@
 
 # ========== HYPERPARAMETERS ==========
 # Model configuration
-MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+MODEL_NAME="meta-llama/Llama-3.1-8B"
 BETA=0.1
-LEARNING_RATE=1e-6
+LEARNING_RATE=1e-5
 USE_PEFT=true
 
 # Training configuration
 BATCH_SIZE=16
-GRAD_ACCUM_STEPS=16
+GRAD_ACCUM_STEPS=4
 EVAL_BATCH_SIZE=16
-N_EPOCHS=1
+N_EPOCHS=3
 EVAL_EVERY=1000
 ENABLE_INTERMEDIATE_CHECKPOINTS=true
 
@@ -19,21 +19,21 @@ ENABLE_INTERMEDIATE_CHECKPOINTS=true
 GPU_DEVICES="1,2"  # Default to "1,2" if not provided
 
 # Dataset configuration
-DATASETS="[data/outputs_8_pairwise_feedback]"
-CACHE_DIR="~/reasoning/HALOs/outputs"
-TEST_DATASET="math500"
+DATASETS="[hendrycks_MATH]"
+CACHE_DIR="outputs"
+TEST_DATASET="hendrycks_MATH"
 NUM_SAMPLES_PER_PROMPT=8 # for sampling
 
 # Output naming
-EXP_NAME="llama3.1-8b-rft-test-${BETA}-${LEARNING_RATE}"
-OUTPUT_FILE="outputs/llama3.1-8b-rft-${BETA}-${LEARNING_RATE}.json"
+EXP_NAME="llama3.1-8b-baseline-${LEARNING_RATE}"
+OUTPUT_FILE="outputs/llama3.1-8b-baseline-${LEARNING_RATE}.json"
 
 # ========== ENVIRONMENT SETUP ==========
 export CUDA_VISIBLE_DEVICES=${GPU_DEVICES}
 export MODEL_PATH=${MODEL_NAME}
 export CKPT=${CACHE_DIR}/${EXP_NAME}/FINAL
-export HF_DATASETS_OFFLINE=1
-export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=0
+export HF_HUB_OFFLINE=0
 
 GPU_COUNT=$(echo ${GPU_DEVICES} | tr -cd ',' | wc -c)
 GPU_COUNT=$((GPU_COUNT + 1))  # Count is commas + 1
@@ -57,9 +57,10 @@ accelerate launch \
   ++config.intermediate_checkpoints=${ENABLE_INTERMEDIATE_CHECKPOINTS} \
   ++config.eval_every=${EVAL_EVERY} \
   ++model.use_peft=${USE_PEFT} \
-  ++n_epochs=${N_EPOCHS}
+  ++n_epochs=${N_EPOCHS} \
+  ++model.use_chat_template=false
 
-# ========== EVALUATION ==========
+#========== EVALUATION ==========sssd
 echo "Starting evaluation on ${TEST_DATASET}"
 python -m train.sample ${CKPT} \
   --gpu_count ${GPU_COUNT} \

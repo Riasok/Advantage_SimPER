@@ -57,7 +57,9 @@ accelerate launch \
   ++config.intermediate_checkpoints=${ENABLE_INTERMEDIATE_CHECKPOINTS} \
   ++config.eval_every=${EVAL_EVERY} \
   ++model.use_peft=${USE_PEFT} \
-  ++n_epochs=${N_EPOCHS}
+  ++n_epochs=${N_EPOCHS} \
+  ++model.use_chat_template=false
+  
 #========== EVALUATION ==========
 echo "Starting evaluation on ${TEST_DATASET}"
 python -m train.sample ${CKPT} \

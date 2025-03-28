@@ -12,6 +12,15 @@ from collections import defaultdict
 from train.math_parsingutil import *
 import matplotlib.pyplot as plt
 import numpy as np
+from transformers import AutoTokenizer
+
+# Initialize the Llama-3.1 tokenizer
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
+
+def get_token_length(text):
+    """Calculate the number of tokens in a text using the Llama-3.1 tokenizer."""
+    tokens = tokenizer.encode(text)
+    return len(tokens)
 
 def format_output(output_str):
     return [{"role": "assistant", "content": output_str}]
@@ -39,6 +48,8 @@ def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
         sample['extracted_answer'] = extracted_ans
         # Add the length of the output
         sample['output_length'] = len(sample['output'])
+        # Add token length using Llama-3.1 tokenizer
+        sample['token_length'] = get_token_length(sample['output'])
         
         grouped_by_prompt[prompt_key].append(sample)
     
@@ -52,7 +63,8 @@ def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
                 'label': 1 if sample['reward'] > 0 else 0,
                 'reward': sample['reward'],
                 'type': 'binary_feedback',
-                'output_length': sample['output_length']
+                'output_length': sample['output_length'],
+                'token_length': sample['token_length']
             }
             feedback.append(feedback_item)
     
@@ -91,6 +103,8 @@ def convert_to_advantage_feedback(samples, seed = 42, fraction_test = 0.2):
         sample['extracted_answer'] = extracted_ans
         # Add the length of the output
         sample['output_length'] = len(sample['output'])
+        # Add token length using Llama-3.1 tokenizer
+        sample['token_length'] = get_token_length(sample['output'])
         
         grouped_by_prompt[prompt_key].append(sample)
     
@@ -136,7 +150,8 @@ def convert_to_advantage_feedback(samples, seed = 42, fraction_test = 0.2):
                 'reward': sample['reward'],
                 'advantage': advantage,
                 'type': 'binary_feedback',
-                'output_length': sample['output_length']
+                'output_length': sample['output_length'],
+                'token_length': sample['token_length']
             }
             feedback.append(feedback_item)
     
@@ -178,6 +193,8 @@ def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_t
         sample['reward'] = reward
         # Add the length of the output
         sample['output_length'] = len(sample['output'])
+        # Add token length using Llama-3.1 tokenizer
+        sample['token_length'] = get_token_length(sample['output'])
 
     # 2) prompt_key로 그룹화
     grouped = defaultdict(list)
@@ -229,7 +246,9 @@ def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_t
                     'reward_difference': abs(sample_A['reward'] - sample_B['reward']),
                     'type': 'pairwise_feedback',
                     'output_length_A': sample_A['output_length'],
-                    'output_length_B': sample_B['output_length']
+                    'output_length_B': sample_B['output_length'],
+                    'token_length_A': sample_A['token_length'],
+                    'token_length_B': sample_B['token_length']
                 }
                 pairwise_feedback.append(feedback_item)
 
@@ -261,7 +280,9 @@ def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_t
                     'reward_difference': abs(sample_A['reward'] - sample_B['reward']),
                     'type': 'pairwise_feedback',
                     'output_length_A': sample_A['output_length'],
-                    'output_length_B': sample_B['output_length']
+                    'output_length_B': sample_B['output_length'],
+                    'token_length_A': sample_A['token_length'],
+                    'token_length_B': sample_B['token_length']
                 }
                 pairwise_feedback.append(feedback_item)
 
@@ -295,6 +316,8 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
     # Collect length data for plotting
     correct_lengths = []
     incorrect_lengths = []
+    correct_token_lengths = []
+    incorrect_token_lengths = []
     
     for sample in samples:
         prompt_list = sample.get('prompt', [])
@@ -316,12 +339,18 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
         # Add output length if not there
         if 'output_length' not in sample:
             sample['output_length'] = len(sample['output'])
+            
+        # Add token length if not there
+        if 'token_length' not in sample:
+            sample['token_length'] = get_token_length(sample['output'])
         
         # Collect length data for plotting
         if reward == 1:
             correct_lengths.append(sample['output_length'])
+            correct_token_lengths.append(sample['token_length'])
         else:
             incorrect_lengths.append(sample['output_length'])
+            incorrect_token_lengths.append(sample['token_length'])
             
         grouped_by_prompt[prompt_key].append(sample)
     
@@ -405,22 +434,30 @@ def generate_accuracy_report(samples: List[Dict]) -> Dict:
         },
         "length_data": {
             "correct_lengths": correct_lengths,
-            "incorrect_lengths": incorrect_lengths
+            "incorrect_lengths": incorrect_lengths,
+            "correct_token_lengths": correct_token_lengths,
+            "incorrect_token_lengths": incorrect_token_lengths
         }
     }
     
     return report
 
-def plot_length_distribution(correct_lengths, incorrect_lengths, output_file):
+def plot_length_distribution(correct_lengths, incorrect_lengths, output_file, is_tokens=False):
     """
     Create a histogram showing the distribution of lengths for correct and incorrect answers.
+    
+    Args:
+        correct_lengths: List of lengths for correct answers
+        incorrect_lengths: List of lengths for incorrect answers
+        output_file: Path to save the plot
+        is_tokens: If True, plot is for token lengths, otherwise character lengths
     """
     plt.figure(figsize=(12, 6))
     
     # Calculate bins that cover both distributions
     all_lengths = correct_lengths + incorrect_lengths
     if not all_lengths:
-        print("No length data available for plotting")
+        print(f"No {'token' if is_tokens else 'character'} length data available for plotting")
         return
     
     min_length = min(all_lengths)
@@ -446,8 +483,9 @@ def plot_length_distribution(correct_lengths, incorrect_lengths, output_file):
         plt.hist(incorrect_lengths, bins=bins, alpha=0.6, label='Incorrect Answers', color='red', 
                  density=True, edgecolor='black')
     
-    plt.title('Distribution of Answer Lengths', fontsize=14)
-    plt.xlabel('Answer Length (characters)', fontsize=12)
+    length_type = "Token" if is_tokens else "Character"
+    plt.title(f'Distribution of Answer {length_type} Lengths', fontsize=14)
+    plt.xlabel(f'Answer {length_type} Length', fontsize=12)
     plt.ylabel('Density', fontsize=12)
     plt.legend(fontsize=12)
     plt.grid(axis='y', alpha=0.3)
@@ -469,7 +507,7 @@ def plot_length_distribution(correct_lengths, incorrect_lengths, output_file):
     # Save the figure
     plt.tight_layout()
     plt.savefig(output_file)
-    print(f"Length distribution plot saved to {output_file}")
+    print(f"{length_type} length distribution plot saved to {output_file}")
     plt.close()
 
 def main():
@@ -504,17 +542,28 @@ def main():
     with open(output_score, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     
-    # Create the length distribution plot
-    output_graph = input_file.replace(".json", "_length_distribution.png")
+    # Create the character length distribution plot
+    output_graph = input_file.replace(".json", "_char_length_distribution.png")
     plot_length_distribution(
         results['length_data']['correct_lengths'],
         results['length_data']['incorrect_lengths'],
-        output_graph
+        output_graph,
+        is_tokens=False
+    )
+    
+    # Create the token length distribution plot
+    output_token_graph = input_file.replace(".json", "_token_length_distribution.png")
+    plot_length_distribution(
+        results['length_data']['correct_token_lengths'],
+        results['length_data']['incorrect_token_lengths'],
+        output_token_graph,
+        is_tokens=True
     )
 
     print(f"Feedback saved to {output_file}")
     print(f"Scores saved to {output_score}")
-    print(f"Length distribution graph saved to {output_graph}")
+    print(f"Character length distribution graph saved to {output_graph}")
+    print(f"Token length distribution graph saved to {output_token_graph}")
 
 if __name__ == "__main__":
     main()

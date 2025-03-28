@@ -14,7 +14,7 @@ from train.math_parsingutil import *
 def format_output(output_str):
     return [{"role": "assistant", "content": output_str}]
 
-def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
+def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.05):
     """
     Convert samples to binary feedback format. A sample is considered desirable if its
     reward crosses the threshold (label = 1) and undesirable otherwise (label = 0).
@@ -64,7 +64,7 @@ def convert_to_binary_feedback(samples, seed = 42, fraction_test = 0.2):
 
     return feedback
 
-def convert_to_advantage_feedback(samples, seed = 42, fraction_test = 0.2):
+def convert_to_advantage_feedback(samples, seed = 42, fraction_test = 0.05):
     """
     Convert samples to advantage feedback format. All samples are labeled as desirable (label = 1),
     but they have different advantage scores based on how their correctness compares to the average.
@@ -146,7 +146,7 @@ def convert_to_advantage_feedback(samples, seed = 42, fraction_test = 0.2):
     print(f"Created {len(feedback)} advantage feedback samples after filtering out samples with advantage = 0")
     return feedback
 
-def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_test = 0.2) -> List[Dict]:
+def convert_to_pairwise_feedback(samples: List[Dict], seed: int = 42, fraction_test = 0.05) -> List[Dict]:
     """
     1) sample['prompt'] (리스트)를 합쳐서 prompt_key로 사용
     2) extract_answer()로 정답 여부 계산 -> sample['reward'] = 1(정답) or 0(오답)

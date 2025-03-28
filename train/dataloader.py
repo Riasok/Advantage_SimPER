@@ -256,7 +256,7 @@ def get_hendrycks_MATH(split: str = "test") -> Dataset:
         data[problem].prompt = conversation
         
         # Add the solution and answer as the assistant's response
-        response = f"Solution:\n{solution}\n\nAnswer: {answer}"
+        response = f"Answer:\n{solution}"
         data[problem].generations.append([{"role": "assistant", "content": response}])
         data[problem].answer = answer
         # Set this as the preferred response (for SFT)
@@ -283,6 +283,7 @@ class DataLoader:
                  n_examples: Optional[int] = None,
                  seed: int = 0,
                  control_tokens: Dict = {},
+                 use_chat_template: bool = False,
                  **kwargs):
         
         torch.manual_seed(seed)
@@ -296,6 +297,7 @@ class DataLoader:
         self.max_length = max_length
         self.max_prompt_length = max_prompt_length
         self.max_prompt_count = max_prompt_count
+        self.use_chat_template = use_chat_template
         self.kwargs = kwargs
 
         assert n_epochs is not None or n_examples is not None, "Must specify either n_epochs or n_examples"
@@ -376,91 +378,242 @@ class DataLoader:
 
         return padded_batch
 
-    def tokenize_batch_element(self, conversation: List[Dict[str, str]], generation: str, truncation_mode: str, prefix: str='target') -> Dict:
+    def tokenize_batch_element(self, conversation: List[Dict[str, str]], generation: List[Dict[str, str]], truncation_mode: str, prefix: str='target') -> Dict:
         """
-        Tokenize a single batch element and truncate if prompt + generation is too long. Batch element is turned into Pytorch 
-        tensors in self.collate. Create the labels for the generation, which are of length equal to the sum of the length of 
+        Tokenize a single batch element and truncate if prompt + generation is too long. Batch element is turned into Pytorch
+        tensors in self.collate. Create the labels for the generation, which are of length equal to the sum of the length of
         the prompt and the generation, with -100 for the prompt tokens.
 
+        Handles both chat-template-based tokenization and raw text tokenization based on self.use_chat_template.
+
         Args:
-        - conversation: list of previous turns, each resembling dict {"role": "assistant", "content": generation}
-        - generation: list of current turns, each resembling dict {"role": "assistant", "content": generation}
-        - truncation_mode: one of 'keep_start'/'keep_end' (truncate end/beginning of prompt respectively)
+        - conversation: list of previous turns, each resembling dict {"role": "user/assistant", "content": text}
+        - generation: list of current turns, typically one dict: [{"role": "assistant", "content": text}]
+        - truncation_mode: one of 'keep_start'/'keep_end' (truncate end/beginning of prompt respectively if prompt is too long)
         - prefix: the prefix corresponding to the generation (e.g., 'chosen', 'rejected', 'target')
 
         Returns:
-            A dict of the tokenized prompt and the concatenation of the two on all relevant elements (e.g., tokens, 
-            attention mask, etc.). The generation elements will have keys starting with '{prefix}_' and the concatenated 
-            elements will have keys starting with '{prefix}_combined_'. 'prompt' will map to the raw conversation history,
-            as a list of dicts, and the prefix key alone will map to the untemplated output.
+            A dict containing tokenized inputs, attention masks, labels, and original text components.
+            Keys related to the specific generation have the specified `prefix`.
+            Padding is handled later in the `collate` function.
         """
-        untruncated_prompt_string = self.tokenizer.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True) # for inference-time generation
-        
-        filter_out_bos_eos = lambda x: [ t for t in x if t not in [ self.tokenizer.bos_token_id, self.tokenizer.eos_token_id, self.tokenizer.pad_token_id] ]
-        # truncate the prompt if necessary
-        total_length = 0
+        batch_element = {} # Initialize the dictionary for the return value
 
-        # truncate history to fit in self.max_prompt_length
-        for i, turn in enumerate(conversation):
-            content_token_ids = filter_out_bos_eos(self.tokenizer.encode(turn['content']))
-            # we're only modifying the text in content but need to consider the formatted length
-            templated_length = len(self.tokenizer.apply_chat_template([turn], tokenize=True, add_generation_prompt=True))
-            
-            if total_length + templated_length > self.max_prompt_length:
-                turn['content'] = self.tokenizer.decode(content_token_ids[:self.max_prompt_length - (total_length + templated_length)])
-                total_length = self.max_prompt_length
-                break
-            else:
-                total_length += templated_length
+        # Ensure conversation and generation are not None or malformed, provide defaults
+        if not conversation: conversation = [{"role": "user", "content": ""}]
+        if not generation: generation = [{"role": "assistant", "content": ""}]
 
-        conversation = conversation[:(i+1)]
 
-        # truncate the generation if necessary 
-        for i, turn in enumerate(generation):
-            content_token_ids = filter_out_bos_eos(self.tokenizer.encode(turn['content']))
-            # we're only modifying the text in content but need to consider the formatted length
-            templated_length = len(self.tokenizer.apply_chat_template([turn], tokenize=True, add_generation_prompt=False))
-            
-            if total_length + templated_length > self.max_length:
-                turn['content'] = self.tokenizer.decode(content_token_ids[:self.max_length - (total_length + templated_length)])
-                total_length = self.max_length
-                break
-            else:
-                total_length += templated_length
+        if self.use_chat_template:
+            # --- Path for Chat Models using Templates ---
 
-        generation = generation[:(i+1)]
+            # Note: The original truncation logic modifies the input lists in place.
+            # This is kept here to match the provided code, but consider refactoring
+            # to avoid side effects in the future.
+            conversation_copy = [turn.copy() for turn in conversation] # Work on copies if possible
+            generation_copy = [turn.copy() for turn in generation] # Work on copies if possible
 
-        tokenized_prompt = self.tokenizer.apply_chat_template(conversation, tokenize=True, add_generation_prompt=True)
-        tokenized_prompt_and_generation_string = self.tokenizer.apply_chat_template(conversation + generation, tokenize=False, add_generation_prompt=False)
-        tokenized_prompt_and_generation = self.tokenizer.apply_chat_template(
-            conversation + generation, 
-            tokenize=True, 
-            add_generation_prompt=False
-        )
+            # Store original untruncated prompt string (as generated by template) for potential use (e.g., logging, inference setup)
+            untruncated_prompt_string = self.tokenizer.apply_chat_template(conversation_copy, tokenize=False, add_generation_prompt=True)
 
-        # Prepare the batch element
-        batch_element = {
-            'prompt': conversation,
-            f'{prefix}': generation,
-            'prompt_text': untruncated_prompt_string,
-            'prompt_input_ids': tokenized_prompt,
-            f'{prefix}_text': self.tokenizer.apply_chat_template(generation, tokenize=False),
-            f'{prefix}_combined_text': tokenized_prompt_and_generation_string,
-            f'{prefix}_combined_input_ids': tokenized_prompt_and_generation,
-            f'{prefix}_combined_attention_mask': [1] * len(tokenized_prompt_and_generation),
-        }
+            filter_out_bos_eos_pad = lambda x: [ t for t in x if t not in [ self.tokenizer.bos_token_id, self.tokenizer.eos_token_id, self.tokenizer.pad_token_id] ]
 
-        # Prepare labels
-        tokenized_prompt = self.tokenizer.apply_chat_template(conversation, tokenize=True, add_generation_prompt=True)
-        if tokenized_prompt[-1] in [self.tokenizer.eos_token_id, self.tokenizer.pad_token_id]:
-            tokenized_prompt.pop()
-        
-        labels = tokenized_prompt_and_generation[:]
-        labels[:len(tokenized_prompt)] = [-100] * len(tokenized_prompt)
-        batch_element[f'{prefix}_labels'] = labels
+            current_total_length = 0
+            truncated_conversation = []
+            # Truncate conversation history turns if needed to fit max_prompt_length
+            for i, turn in enumerate(conversation_copy):
+                # Estimate length added by this turn's template + content
+                # Use apply_chat_template on the single turn for accurate length estimation including template tokens
+                templated_turn_ids = self.tokenizer.apply_chat_template([turn], tokenize=True, add_generation_prompt=(i == len(conversation_copy) - 1)) # Add prompt only for last user turn normally
+                templated_length = len(templated_turn_ids)
+
+                # Check if adding this turn exceeds max_prompt_length
+                if current_total_length + templated_length > self.max_prompt_length:
+                    # Calculate remaining space
+                    remaining_space = self.max_prompt_length - current_total_length
+                    # Re-tokenize just the content to find where to cut
+                    content_token_ids = filter_out_bos_eos_pad(self.tokenizer.encode(turn['content'], add_special_tokens=False)) # Tokenize content only
+
+                    # Estimate how many content tokens can fit. This is approximate.
+                    # A more robust way involves carefully subtracting template token counts.
+                    # For simplicity, let's assume template tokens take some overhead T: len = T + len(content_tokens)
+                    # We need content_tokens <= remaining_space - T. T is hard to know exactly.
+                    # Let's use a simpler heuristic: truncate content tokens based on remaining_space.
+                    # This might slightly over/under shoot.
+                    # A simpler approach: just truncate the templated_turn_ids
+                    if remaining_space > 0:
+                        truncated_turn_ids = templated_turn_ids[:remaining_space]
+                        # Try to decode back - this might fail if cut mid-template
+                        try:
+                           turn['content'] = self.tokenizer.decode(filter_out_bos_eos_pad(truncated_turn_ids), skip_special_tokens=True) # Attempt to recover content
+                        except:
+                           # If decoding fails, maybe just stop adding turns? Or use a simpler content cut.
+                           # Fallback: Rough content cut based on available space vs original content tokens
+                           approx_overhead = templated_length - len(content_token_ids)
+                           content_limit = max(0, remaining_space - approx_overhead)
+                           turn['content'] = self.tokenizer.decode(content_token_ids[:content_limit])
+
+                        truncated_conversation.append(turn)
+                        current_total_length = self.max_prompt_length # Mark as full
+                    break # Stop adding turns
+                else:
+                    truncated_conversation.append(turn)
+                    current_total_length += templated_length # Update length based on templated version
+
+            conversation_to_use = truncated_conversation
+            # Use the calculated length after conversation truncation as the base for generation truncation
+            current_total_length = len(self.tokenizer.apply_chat_template(conversation_to_use, tokenize=True, add_generation_prompt=True))
+
+
+            truncated_generation = []
+            # Truncate generation turns if needed to fit max_length (prompt + generation)
+            for i, turn in enumerate(generation_copy):
+                # Estimate length added by this turn's template + content
+                # No add_generation_prompt needed when templating assistant turns usually
+                templated_turn_ids = self.tokenizer.apply_chat_template([turn], tokenize=True, add_generation_prompt=False)
+                templated_length = len(templated_turn_ids)
+
+                if current_total_length + templated_length > self.max_length:
+                     # Calculate remaining space
+                    remaining_space = self.max_length - current_total_length
+                    if remaining_space > 0:
+                       # Similar truncation logic as above, applied to generation turn
+                        truncated_turn_ids = templated_turn_ids[:remaining_space]
+                        try:
+                           turn['content'] = self.tokenizer.decode(filter_out_bos_eos_pad(truncated_turn_ids), skip_special_tokens=True)
+                        except:
+                            content_token_ids = filter_out_bos_eos_pad(self.tokenizer.encode(turn['content'], add_special_tokens=False))
+                            approx_overhead = templated_length - len(content_token_ids)
+                            content_limit = max(0, remaining_space - approx_overhead)
+                            turn['content'] = self.tokenizer.decode(content_token_ids[:content_limit])
+
+                        truncated_generation.append(turn)
+                        current_total_length = self.max_length # Mark as full
+                    break # Stop adding turns
+                else:
+                    truncated_generation.append(turn)
+                    current_total_length += templated_length
+
+            generation_to_use = truncated_generation
+
+            # Final tokenization using the (potentially truncated) conversation and generation
+            tokenized_prompt = self.tokenizer.apply_chat_template(conversation_to_use, tokenize=True, add_generation_prompt=True)
+            tokenized_prompt_and_generation = self.tokenizer.apply_chat_template(
+                conversation_to_use + generation_to_use,
+                tokenize=True,
+                add_generation_prompt=False # Template typically handles this transition
+            )
+            # Get string representations (for logging or inspection)
+            final_prompt_string = self.tokenizer.apply_chat_template(conversation_to_use, tokenize=False, add_generation_prompt=True)
+            final_generation_string = self.tokenizer.apply_chat_template(generation_to_use, tokenize=False, add_generation_prompt=False)
+            final_combined_string = self.tokenizer.apply_chat_template(conversation_to_use + generation_to_use, tokenize=False, add_generation_prompt=False)
+
+            # Prepare labels
+            labels = list(tokenized_prompt_and_generation) # Create a mutable copy
+            prompt_length = len(tokenized_prompt)
+            # Mask out the prompt tokens
+            labels[:prompt_length] = [-100] * prompt_length
+            # Ensure labels are not longer than the combined sequence (shouldn't happen with correct tokenization)
+            labels = labels[:len(tokenized_prompt_and_generation)]
+
+            batch_element = {
+                'prompt': conversation, # Original conversation structure
+                f'{prefix}': generation, # Original generation structure
+                'prompt_text': final_prompt_string, # Potentially truncated prompt text
+                'prompt_input_ids': tokenized_prompt,
+                f'{prefix}_text': final_generation_string, # Potentially truncated generation text
+                f'{prefix}_combined_text': final_combined_string, # Potentially truncated combined text
+                f'{prefix}_combined_input_ids': tokenized_prompt_and_generation,
+                f'{prefix}_combined_attention_mask': [1] * len(tokenized_prompt_and_generation),
+                f'{prefix}_labels': labels,
+                # Include untruncated prompt string for reference if needed elsewhere
+                # 'untruncated_prompt_text': untruncated_prompt_string
+            }
+
+        else:
+            # --- Path for Base Models (No Template) ---
+
+            # Extract raw text - assuming simple structure for base model fine-tuning
+            prompt_str = conversation[0]['content'] if conversation else ""
+            gen_str = generation[0]['content'] if generation else ""
+
+            # Tokenize prompt (typically add BOS)
+            # Check tokenizer documentation for default behavior (add_special_tokens=True usually adds BOS for Llama)
+            tokenized_prompt = self.tokenizer.encode(prompt_str, add_special_tokens=True)
+
+            # Apply prompt truncation if needed
+            if len(tokenized_prompt) > self.max_prompt_length:
+                if truncation_mode == 'keep_end':
+                    # Keep the end, including the initial BOS if present
+                    keep_tokens = tokenized_prompt[0:1] + tokenized_prompt[-(self.max_prompt_length-1):] if self.tokenizer.bos_token_id == tokenized_prompt[0] and self.max_prompt_length > 0 else tokenized_prompt[-self.max_prompt_length:]
+                    tokenized_prompt = keep_tokens
+                else: # 'keep_start' or default
+                    tokenized_prompt = tokenized_prompt[:self.max_prompt_length]
+                # Update prompt_str if needed for consistency (optional)
+                # prompt_str = self.tokenizer.decode(tokenized_prompt, skip_special_tokens=True) # Decode without special tokens for clean text
+
+            # Tokenize generation separately (without special tokens unless it's meant to be a standalone sequence)
+            tokenized_generation = self.tokenizer.encode(gen_str, add_special_tokens=False) # No BOS/EOS for the middle part
+
+            # Combine prompt and generation tokens
+            tokenized_combined = tokenized_prompt + tokenized_generation
+
+            # Apply combined truncation (prioritize keeping prompt)
+            if len(tokenized_combined) > self.max_length:
+                prompt_len = len(tokenized_prompt)
+                max_gen_len = self.max_length - prompt_len
+                if max_gen_len <= 0:
+                    # Prompt alone is too long, truncate combined to max_length (effectively truncating prompt further)
+                    tokenized_combined = tokenized_prompt[:self.max_length]
+                else:
+                    # Truncate the generation part
+                    truncated_gen_tokens = tokenized_generation[:max_gen_len]
+                    tokenized_combined = tokenized_prompt + truncated_gen_tokens
+                # Update gen_str and combined_str if needed for consistency (optional)
+                # gen_str = self.tokenizer.decode(tokenized_combined[prompt_len:], skip_special_tokens=True)
+
+            # Add EOS token if the tokenizer doesn't add it automatically and it's expected by the model
+            # Many Causal LMs expect EOS at the end of the full sequence.
+            if self.tokenizer.eos_token_id is not None and (not tokenized_combined or tokenized_combined[-1] != self.tokenizer.eos_token_id):
+                 # Check length before adding EOS
+                 if len(tokenized_combined) < self.max_length:
+                     tokenized_combined.append(self.tokenizer.eos_token_id)
+                 elif len(tokenized_combined) == self.max_length:
+                      # Replace the last token with EOS if already at max length
+                      tokenized_combined[-1] = self.tokenizer.eos_token_id
+                 # Else: EOS cannot be added as it's already over length after truncation
+
+            # Create labels
+            labels = list(tokenized_combined) # Create a mutable copy
+            prompt_length = len(tokenized_prompt)
+            # Mask out the prompt part
+            labels[:prompt_length] = [-100] * prompt_length
+             # Ensure labels match the final tokenized length
+            labels = labels[:len(tokenized_combined)]
+
+            # Get final string representations (optional, for inspection)
+            final_prompt_str = self.tokenizer.decode(tokenized_prompt, skip_special_tokens=True) # Clean prompt text
+            final_gen_str = self.tokenizer.decode(tokenized_combined[prompt_length:], skip_special_tokens=True) # Clean gen text
+            final_combined_str = self.tokenizer.decode(tokenized_combined, skip_special_tokens=True) # Clean combined text
+
+            batch_element = {
+                'prompt': conversation, # Original structured prompt
+                f'{prefix}': generation, # Original structured generation
+                'prompt_text': final_prompt_str,
+                'prompt_input_ids': tokenized_prompt,
+                f'{prefix}_text': final_gen_str,
+                f'{prefix}_combined_text': final_combined_str,
+                f'{prefix}_combined_input_ids': tokenized_combined,
+                f'{prefix}_combined_attention_mask': [1] * len(tokenized_combined),
+                f'{prefix}_labels': labels,
+            }
+
+        # --- Common Post-processing (if any) ---
+        # Example: Ensure no unexpected tokens remain (handled by filter_out_bos_eos_pad earlier for chat)
+        # The padding itself is done in the collate function.
 
         return batch_element
-
+    
     def __iter__(self):
         """Create a flat version of the data and yield batches."""
         raise NotImplementedError
